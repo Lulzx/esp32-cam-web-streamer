@@ -48,6 +48,8 @@ USB-serial bridge.
 The trick: **hold the bridge board's own ESP32 in reset** (tie its `EN` pin to `GND`)
 so its CP2102 is freed up, then tap that CP2102's UART lines onto the camera.
 
+![ESP32-CAM bridge wiring diagram](wiring.png)
+
 ### Wiring: bridge → ESP32-CAM
 
 | Bridge ESP32 (CP2102) | ESP32-CAM | Notes |

@@ -72,6 +72,15 @@ for i in $(seq 1 254); do ping -c1 -W1 192.168.1.$i >/dev/null 2>&1 & done; wait
 arp -an | grep -i '<cam-mac>'
 ```
 
+## Wiring (flashing via a spare-ESP32 bridge)
+
+If your MB shield's serial chip is dead, use any spare ESP32 (with a working
+USB-serial chip) as a bridge — hold its `EN` to `GND` and tap its UART onto the cam:
+
+![ESP32-CAM bridge wiring diagram](docs/wiring.png)
+
+Full pin tables and the why-it-works are in [`docs/hardware.md`](docs/hardware.md).
+
 ## Documentation
 
 | Doc | What's in it |
