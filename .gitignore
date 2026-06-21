@@ -1,0 +1,15 @@
+# Secrets — never commit real WiFi credentials
+esp32-cam/secrets.h
+
+# Arduino / build artifacts
+esp32-cam/build/
+*.bin
+*.elf
+*.map
+
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# Claude Code runtime state
+.claude/
