@@ -13,6 +13,14 @@
 const char *WIFI_SSID = WIFI_SSID_VALUE;
 const char *WIFI_PASS = WIFI_PASS_VALUE;
 
+// ---- stream tuning (raise these once the cam has a solid 5V supply) ----
+//  Frame size: FRAMESIZE_VGA(640x480) SVGA(800x600) XGA(1024x768)
+//              HD(1280x720) SXGA(1280x1024) UXGA(1600x1200, OV2640 max)
+#define CAM_FRAME_SIZE    FRAMESIZE_SVGA    // resolution (higher = sharper but more WiFi load)
+#define CAM_JPEG_QUALITY  12                // 10-12 sweet spot; lower number = sharper/bigger/slower
+#define CAM_XCLK_HZ       20000000          // 20MHz = higher FPS / less lag; drop to 10MHz if power is weak
+#define CAM_WIFI_TX       WIFI_POWER_15dBm  // higher = more throughput (less lag); lower if it brownouts
+
 // ---- AI-Thinker ESP32-CAM pin map ----
 #define PWDN_GPIO_NUM   32
 #define RESET_GPIO_NUM  -1
@@ -105,14 +113,13 @@ void setup() {
   config.pin_vsync = VSYNC_GPIO_NUM; config.pin_href = HREF_GPIO_NUM;
   config.pin_sccb_sda = SIOD_GPIO_NUM; config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM; config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 10000000;          // lower clock = lower current draw (brownout-safe)
-  config.frame_size = FRAMESIZE_VGA;       // 640x480
+  config.xclk_freq_hz = CAM_XCLK_HZ;
+  config.frame_size = psramFound() ? CAM_FRAME_SIZE : FRAMESIZE_VGA;  // no PSRAM -> stay small
   config.pixel_format = PIXFORMAT_JPEG;
-  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  config.grab_mode = CAMERA_GRAB_LATEST;   // always serve the freshest frame -> minimal lag
   config.fb_location = CAMERA_FB_IN_PSRAM;
-  config.jpeg_quality = 12;
-  config.fb_count = psramFound() ? 2 : 1;
-  if (!psramFound()) config.frame_size = FRAMESIZE_SVGA;
+  config.jpeg_quality = CAM_JPEG_QUALITY;
+  config.fb_count = psramFound() ? 2 : 1;  // double-buffer when PSRAM present
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
@@ -130,7 +137,7 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   WiFi.setSleep(false);
-  WiFi.setTxPower(WIFI_POWER_11dBm);    // modest TX (balance reach vs current spike)
+  WiFi.setTxPower(CAM_WIFI_TX);         // see CAM_WIFI_TX define
   Serial.println(">>> WiFi.begin called; watching status in loop()");
 
   start_server();   // server starts now; reachable once WiFi associates

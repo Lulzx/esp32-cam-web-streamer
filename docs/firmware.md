@@ -31,15 +31,28 @@ The periodic reprint means you can attach a serial monitor *any time* and read t
 
 ## Camera config & tuning
 
-Defaults are tuned conservative for weak power. To raise quality once you have a
-solid 5V supply, edit `setup()`:
+Tuning lives in `#define`s at the top of the sketch:
 
-| Setting | Default here | Notes |
-|---------|--------------|-------|
-| `config.xclk_freq_hz` | `10000000` (10 MHz) | Raise to `20000000` for higher frame rate **if** power is solid |
-| `config.frame_size` | `FRAMESIZE_VGA` (640×480) | `FRAMESIZE_SVGA`/`XGA`/`SXGA` need PSRAM + good power |
-| `config.jpeg_quality` | `12` | Lower number = higher quality = more bandwidth/RAM |
-| `config.fb_count` | `2` if PSRAM else `1` | More buffers = smoother stream |
+| `#define` | Default | Notes |
+|-----------|---------|-------|
+| `CAM_FRAME_SIZE` | `FRAMESIZE_SVGA` (800×600) | `VGA`/`SVGA`/`XGA`/`HD`/`SXGA`/`UXGA` — higher = sharper but more WiFi load |
+| `CAM_JPEG_QUALITY` | `12` | Lower number = higher quality = bigger frames / more bandwidth |
+| `CAM_XCLK_HZ` | `20000000` (20 MHz) | Higher = more FPS / less lag; drop to `10000000` if power is weak |
+| `CAM_WIFI_TX` | `WIFI_POWER_15dBm` | Higher = more throughput; lower if it brownouts |
+| `config.grab_mode` | `CAMERA_GRAB_LATEST` | **always serves the newest frame** so video can't fall behind (the key anti-lag setting) |
+| `config.fb_count` | `2` if PSRAM else `1` | Double-buffer: capture while transmitting |
+
+### Lag vs. resolution vs. power
+
+These pull against each other. The lag you perceive is usually frames *queuing up*,
+not low FPS — so `CAMERA_GRAB_LATEST` (drop stale frames, send the freshest) is the
+biggest fix and costs no power. Higher resolution / clock / TX power reduce lag from
+the *throughput* side but draw more current — only push them with a **solid 5V
+supply**. On weak power, keep `CAM_XCLK_HZ` at 10 MHz and `CAM_FRAME_SIZE` at VGA.
+
+> **`cam_hal: FB-OVF`** in the serial log = frame-buffer overflow: the sensor is
+> producing frames faster than they're drained. Mitigate by lowering `CAM_XCLK_HZ`,
+> dropping `CAM_FRAME_SIZE`, or raising `jpeg_quality`'s number (smaller frames).
 
 The pin map is the standard **AI-Thinker** layout; `esp_camera` auto-detects the
 sensor (OV2640, OV3660, …) so no change is needed per sensor.
