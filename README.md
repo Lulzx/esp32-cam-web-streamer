@@ -89,6 +89,7 @@ Full pin tables and the why-it-works are in [`docs/hardware.md`](docs/hardware.m
 | [`docs/flashing.md`](docs/flashing.md) | Why 40 MHz/DIO, exact `esptool` offsets, no-reset flashing through a bridge |
 | [`docs/firmware.md`](docs/firmware.md) | How the firmware works, tuning resolution/quality, the brownout/power hardening |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | **Every failure we hit and how we diagnosed it** — charge-only cables, dead CH340, `invalid header`, brownout boot-loops, WiFi `status=6`, and more |
+| [`docs/codec-research.md`](docs/codec-research.md) | A from-scratch experiment in **beating MJPEG** — a novel content-addressed codec (ReCAST), simulated and benchmarked on a laptop with rate-distortion charts |
 
 ## Repo layout
 

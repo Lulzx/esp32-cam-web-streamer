@@ -13,3 +13,7 @@ esp32-cam/build/
 
 # Claude Code runtime state
 .claude/
+
+# Python cache
+__pycache__/
+*.pyc
