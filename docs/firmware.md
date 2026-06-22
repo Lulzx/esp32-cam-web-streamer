@@ -37,10 +37,13 @@ Tuning lives in `#define`s at the top of the sketch:
 |-----------|---------|-------|
 | `CAM_FRAME_SIZE` | `FRAMESIZE_SVGA` (800×600) | `VGA`/`SVGA`/`XGA`/`HD`/`SXGA`/`UXGA` — higher = sharper but more WiFi load |
 | `CAM_JPEG_QUALITY` | `12` | Lower number = higher quality = bigger frames / more bandwidth |
-| `CAM_XCLK_HZ` | `20000000` (20 MHz) | Higher = more FPS / less lag; drop to `10000000` if power is weak |
+| `CAM_XCLK_HZ` | `16000000` (16 MHz) | Smooth without FB-OVF. `20000000` = more FPS, `10000000` = low power |
 | `CAM_WIFI_TX` | `WIFI_POWER_15dBm` | Higher = more throughput; lower if it brownouts |
 | `config.grab_mode` | `CAMERA_GRAB_LATEST` | **always serves the newest frame** so video can't fall behind (the key anti-lag setting) |
-| `config.fb_count` | `2` if PSRAM else `1` | Double-buffer: capture while transmitting |
+| `config.fb_count` | `3` if PSRAM else `1` | More buffers = headroom against FB-OVF |
+
+Measured on an AI-Thinker ESP32-CAM at these defaults: **800×600 @ ~11 FPS**, ~14 KB
+per frame, ~1.3 Mbps — smooth, no FB-OVF.
 
 ### Lag vs. resolution vs. power
 

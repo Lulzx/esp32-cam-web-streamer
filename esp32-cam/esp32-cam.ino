@@ -18,7 +18,7 @@ const char *WIFI_PASS = WIFI_PASS_VALUE;
 //              HD(1280x720) SXGA(1280x1024) UXGA(1600x1200, OV2640 max)
 #define CAM_FRAME_SIZE    FRAMESIZE_SVGA    // resolution (higher = sharper but more WiFi load)
 #define CAM_JPEG_QUALITY  12                // 10-12 sweet spot; lower number = sharper/bigger/slower
-#define CAM_XCLK_HZ       20000000          // 20MHz = higher FPS / less lag; drop to 10MHz if power is weak
+#define CAM_XCLK_HZ       16000000          // 16MHz: smooth without FB-OVF; 20MHz=more FPS, 10MHz=low power
 #define CAM_WIFI_TX       WIFI_POWER_15dBm  // higher = more throughput (less lag); lower if it brownouts
 
 // ---- AI-Thinker ESP32-CAM pin map ----
@@ -119,7 +119,7 @@ void setup() {
   config.grab_mode = CAMERA_GRAB_LATEST;   // always serve the freshest frame -> minimal lag
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.jpeg_quality = CAM_JPEG_QUALITY;
-  config.fb_count = psramFound() ? 2 : 1;  // double-buffer when PSRAM present
+  config.fb_count = psramFound() ? 3 : 1;  // 3 buffers (PSRAM) = headroom vs FB-OVF
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
