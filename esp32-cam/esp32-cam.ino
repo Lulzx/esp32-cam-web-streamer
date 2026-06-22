@@ -16,10 +16,10 @@ const char *WIFI_PASS = WIFI_PASS_VALUE;
 // ---- stream tuning (raise these once the cam has a solid 5V supply) ----
 //  Frame size: FRAMESIZE_VGA(640x480) SVGA(800x600) XGA(1024x768)
 //              HD(1280x720) SXGA(1280x1024) UXGA(1600x1200, OV2640 max)
-#define CAM_FRAME_SIZE    FRAMESIZE_SVGA    // resolution (higher = sharper but more WiFi load)
-#define CAM_JPEG_QUALITY  12                // 10-12 sweet spot; lower number = sharper/bigger/slower
-#define CAM_XCLK_HZ       16000000          // 16MHz: smooth without FB-OVF; 20MHz=more FPS, 10MHz=low power
-#define CAM_WIFI_TX       WIFI_POWER_15dBm  // higher = more throughput (less lag); lower if it brownouts
+#define CAM_FRAME_SIZE    FRAMESIZE_UXGA    // init at max; change live via /control?fs=N
+#define CAM_JPEG_QUALITY  12                // 0-63, lower number = sharper/bigger; live via /control?q=N
+#define CAM_XCLK_HZ       20000000          // 20MHz = max sensor frame rate
+#define CAM_WIFI_TX       WIFI_POWER_19_5dBm // max TX = max throughput (needs solid 5V)
 
 // ---- AI-Thinker ESP32-CAM pin map ----
 #define PWDN_GPIO_NUM   32
@@ -47,18 +47,51 @@ static const char *STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" P
 static const char *STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
 static const char *STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
-static httpd_handle_t server = NULL;
+static httpd_handle_t camera_httpd = NULL;   // port 80: page + control
+static httpd_handle_t stream_httpd = NULL;   // port 81: MJPEG stream (separate so control isn't blocked)
 
 static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESP32-CAM</title><style>body{margin:0;background:#111;color:#eee;font-family:system-ui;text-align:center}
-img{max-width:100%;height:auto;display:block;margin:0 auto}h3{padding:12px}</style></head>
-<body><h3>ESP32-CAM live</h3><img src="/stream"></body></html>
+img{max-width:100%;height:auto;display:block;margin:0 auto}h3{padding:10px}
+.bar{padding:8px;font-size:14px}select,input{vertical-align:middle}</style></head>
+<body><h3>ESP32-CAM live</h3>
+<div class="bar">res
+<select id="fs" onchange="c()">
+<option value="5">QVGA 320x240</option><option value="8">VGA 640x480</option>
+<option value="9">SVGA 800x600</option><option value="10">XGA 1024x768</option>
+<option value="11">HD 1280x720</option><option value="13">UXGA 1600x1200</option></select>
+&nbsp;quality <input id="q" type="range" min="4" max="40" value="12" onchange="c()">
+</div>
+<img id="v">
+<script>var h=location.hostname;document.getElementById('v').src='http://'+h+':81/stream';
+function c(){fetch('http://'+h+'/control?fs='+fs.value+'&q='+q.value);}</script>
+</body></html>
 )rawliteral";
 
 static esp_err_t index_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html");
   return httpd_resp_send(req, INDEX_HTML, strlen(INDEX_HTML));
+}
+
+// Runtime tuning: /control?fs=<framesize int>&q=<jpeg quality 4-63>
+static esp_err_t control_handler(httpd_req_t *req) {
+  sensor_t *s = esp_camera_sensor_get();
+  size_t len = httpd_req_get_url_query_len(req) + 1;
+  if (len > 1) {
+    char *buf = (char *)malloc(len);
+    if (buf && httpd_req_get_url_query_str(req, buf, len) == ESP_OK) {
+      char v[12];
+      if (httpd_query_key_value(buf, "fs", v, sizeof(v)) == ESP_OK) s->set_framesize(s, (framesize_t)atoi(v));
+      if (httpd_query_key_value(buf, "q",  v, sizeof(v)) == ESP_OK) s->set_quality(s, atoi(v));
+    }
+    free(buf);
+  }
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_type(req, "text/plain");
+  char out[48];
+  int n = snprintf(out, sizeof(out), "fs=%d q=%d\n", s->status.framesize, s->status.quality);
+  return httpd_resp_send(req, out, n);
 }
 
 static esp_err_t stream_handler(httpd_req_t *req) {
@@ -85,12 +118,18 @@ static esp_err_t stream_handler(httpd_req_t *req) {
 
 static void start_server() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.server_port = 80;
-  httpd_uri_t index_uri = { .uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = NULL };
-  httpd_uri_t stream_uri = { .uri = "/stream", .method = HTTP_GET, .handler = stream_handler, .user_ctx = NULL };
-  if (httpd_start(&server, &config) == ESP_OK) {
-    httpd_register_uri_handler(server, &index_uri);
-    httpd_register_uri_handler(server, &stream_uri);
+  httpd_uri_t index_uri  = { .uri = "/",        .method = HTTP_GET, .handler = index_handler,   .user_ctx = NULL };
+  httpd_uri_t ctrl_uri   = { .uri = "/control", .method = HTTP_GET, .handler = control_handler, .user_ctx = NULL };
+  httpd_uri_t stream_uri = { .uri = "/stream",  .method = HTTP_GET, .handler = stream_handler,  .user_ctx = NULL };
+
+  config.server_port = 80; config.ctrl_port = 32768;
+  if (httpd_start(&camera_httpd, &config) == ESP_OK) {
+    httpd_register_uri_handler(camera_httpd, &index_uri);
+    httpd_register_uri_handler(camera_httpd, &ctrl_uri);
+  }
+  config.server_port = 81; config.ctrl_port = 32769;
+  if (httpd_start(&stream_httpd, &config) == ESP_OK) {
+    httpd_register_uri_handler(stream_httpd, &stream_uri);
   }
 }
 
@@ -119,13 +158,18 @@ void setup() {
   config.grab_mode = CAMERA_GRAB_LATEST;   // always serve the freshest frame -> minimal lag
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.jpeg_quality = CAM_JPEG_QUALITY;
-  config.fb_count = psramFound() ? 3 : 1;  // 3 buffers (PSRAM) = headroom vs FB-OVF
+  config.fb_count = psramFound() ? 3 : 1;  // 3 buffers (PSRAM) = headroom vs FB-OVF, drives latest-frame drop
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed: 0x%x\n", err);
     return;
   }
+  // init at UXGA allocates max-size buffers; drop to a smooth boot default.
+  // Slide live from the page UI (or /control?fs=N&q=M): QVGA=5..UXGA=13.
+  sensor_t *s = esp_camera_sensor_get();
+  s->set_framesize(s, FRAMESIZE_SVGA);   // ~15 FPS, sharp default
+  s->set_quality(s, 12);
 
   WiFi.onEvent([](WiFiEvent_t e, WiFiEventInfo_t info){
     Serial.print(">>> WiFi DISCONNECTED, reason=");
